@@ -16,6 +16,7 @@ const App = () => {
   const [selectedExpiration, setSelectedExpiration] = useState(null);
   const [optionsData, setOptionsData] = useState([]); // Store all options for selected expiration
   const [selectedOption, setSelectedOption] = useState(null); // Currently selected option details
+  const [entryPrice, setEntryPrice] = useState(0); // Track actual stock entry price for covered calls
   const [allOptionsData, setAllOptionsData] = useState(null); // Store complete API response for switching
   const [error, setError] = useState(null);
 
@@ -25,7 +26,7 @@ const App = () => {
     
     setLoading(true);
     setError(null);
-    const requestConfig = {
+      const requestConfig = {
       method: 'GET',
       url: 'https://yahoo-finance-real-time1.p.rapidapi.com/stock/get-options',
       params: { 
@@ -159,11 +160,19 @@ const App = () => {
   }, [mode, allOptionsData]);
 
   const currentPrice = data?.optionChain?.result[0]?.quote?.regularMarketPrice || 0;
+  // Initialize entry price to current price when first loaded
+  React.useEffect(() => {
+    if (currentPrice && (!entryPrice || entryPrice === 0)) {
+      setEntryPrice(currentPrice);
+    }
+  }, [currentPrice]);
   const contracts = Math.floor(cash / (strike * 100));
   const totalPremium = contracts * premium * 100;
   const annualizedROI = ((premium / strike) * (365 / days) * 100).toFixed(1);
   const safetyBuffer = (((strike - currentPrice) / currentPrice) * 100).toFixed(1);
   const discountPercent = (((currentPrice - strike) / currentPrice) * 100).toFixed(1);
+  const weeklyROI = ((premium / strike) * (7 / days) * 100);
+  const monthlyROI = ((premium / strike) * (30 / days) * 100);
   
   // Calculate confidence percentage (0-100) based on safety buffer
   const calculateConfidencePercentage = () => {
@@ -213,18 +222,25 @@ const App = () => {
   const confidence = calculateConfidence();
 
   // Calculate additional key metrics
-  const breakEven = mode === 'CSP' 
-    ? (strike - premium).toFixed(2)
-    : (strike + premium).toFixed(2);
-  
-  const maxProfit = (totalPremium).toFixed(0);
+  // Break-even: CSP -> strike - premium (cost basis if assigned)
+  // Covered Call -> currentPrice - premium (cost basis after premium received)
+  const breakEven = mode === 'CSP'
+    ? (strike - premium)
+    : (entryPrice - premium);
+
+  // Max profit: CSP = premium collected; CC = premium + upside capped at strike
+  const maxProfit = mode === 'CSP'
+    ? totalPremium
+    : ( (Math.max(0, strike - entryPrice) * contracts * 100) + totalPremium );
+
+  // Max loss: CSP -> strike assignment (capital at risk minus premium); CC -> owning stock downside reduced by premium
   const maxLoss = mode === 'CSP'
-    ? ((strike * contracts * 100) - totalPremium).toFixed(0)
-    : 'Unlimited';
-  
+    ? ((strike * contracts * 100) - totalPremium)
+    : ((entryPrice * contracts * 100) - totalPremium);
+
   const returnOnRisk = mode === 'CSP'
-    ? ((totalPremium / (strike * contracts * 100)) * 100).toFixed(2)
-    : ((totalPremium / (currentPrice * contracts * 100)) * 100).toFixed(2);
+    ? ((totalPremium / (strike * contracts * 100)) * 100)
+    : ((totalPremium / (entryPrice * contracts * 100)) * 100);
 
   const probabilityITM = selectedOption?.inTheMoney ? 
     (mode === 'CSP' ? (strike > currentPrice ? '~50%+' : '<50%') : (strike < currentPrice ? '~50%+' : '<50%'))
@@ -257,27 +273,8 @@ const App = () => {
       </header>
 
       <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
-        {/* Left side: Symbol input aligned with sidebar */}
-        <div className="lg:col-span-4">
-          <label htmlFor="ticker-input" className="sr-only">Stock Symbol</label>
-          <input 
-            id="ticker-input"
-            type="text"
-            className="bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 uppercase w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="Symbol" 
-            value={ticker}
-            onChange={(e) => setTicker(e.target.value.toUpperCase())}
-            onKeyDown={(e) => e.key === 'Enter' && fetchMarketData(e.target.value.toUpperCase())}
-            aria-label="Enter stock ticker symbol"
-            aria-describedby="ticker-hint"
-            autoComplete="off"
-            maxLength={10}
-          />
-          <span id="ticker-hint" className="sr-only">Press Enter to search</span>
-        </div>
-
-        {/* Right side: Tabs aligned with chart */}
-        <div className="lg:col-span-8">
+        {/* Tabs aligned with chart */}
+        <div className="lg:col-span-12">
           <div className="flex bg-slate-900 p-1 rounded-2xl border border-slate-800 w-full max-w-md" role="tablist" aria-label="Options strategy selector">
             <button 
               role="tab"
@@ -339,14 +336,20 @@ const App = () => {
             </div>
 
             <div>
-              <label className="text-xs text-slate-500 block mb-2">Ticker</label>
-              <input 
-                type="text"
-                value={ticker}
-                onChange={(e) => setTicker(e.target.value.toUpperCase())}
-                onBlur={(e) => fetchMarketData(e.target.value.toUpperCase())}
-                className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 w-full uppercase text-slate-100"
-              />
+              <label className="text-xs text-slate-500 block mb-2">Ticker & Entry Price</label>
+              <div className="flex gap-2">
+                <input 
+                  type="text"
+                  value={ticker}
+                  onChange={(e) => setTicker(e.target.value.toUpperCase())}
+                  onBlur={(e) => fetchMarketData(e.target.value.toUpperCase())}
+                  className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 flex-1 uppercase text-slate-100"
+                  placeholder="Symbol"
+                />
+                <div className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-400 whitespace-nowrap flex items-center">
+                  ${entryPrice.toFixed(2)}
+                </div>
+              </div>
             </div>
 
             <div>
@@ -431,7 +434,27 @@ const App = () => {
               )}
               <div className="flex justify-between text-sm">
                 <span className="text-slate-400">Break-Even</span>
-                <span className="text-purple-400 font-bold">${breakEven}</span>
+                <span className="text-purple-400 font-bold">${breakEven.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">Weekly ROI</span>
+                <span className="text-blue-400 font-bold">{weeklyROI.toFixed(2)}%</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">Monthly ROI</span>
+                <span className="text-blue-400 font-bold">{monthlyROI.toFixed(2)}%</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-500">Annualized (extrapolated)</span>
+                <span className="text-slate-400">{annualizedROI}%</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">Return on Risk</span>
+                <span className="text-cyan-400 font-bold">{Number(returnOnRisk).toFixed(2)}%</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">Max Profit</span>
+                <span className="text-green-400 font-bold">${Number(maxProfit).toLocaleString(undefined, {maximumFractionDigits:2})}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-slate-400">Annualized ROI</span>
@@ -439,11 +462,11 @@ const App = () => {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-slate-400">Return on Risk</span>
-                <span className="text-cyan-400 font-bold">{returnOnRisk}%</span>
+                <span className="text-cyan-400 font-bold">{Number(returnOnRisk).toFixed(2)}%</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-slate-400">Max Profit</span>
-                <span className="text-green-400 font-bold">${maxProfit}</span>
+                <span className="text-green-400 font-bold">${Number(maxProfit).toLocaleString(undefined, {maximumFractionDigits:2})}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-slate-400">Contracts</span>
@@ -464,6 +487,7 @@ const App = () => {
                     <span className="text-slate-400">{(selectedOption.impliedVolatility * 100).toFixed(1)}%</span>
                   </div>
                 </>
+              )}
               )}
             </div>
           </div>
