@@ -18,6 +18,8 @@ const App = () => {
   const [selectedOption, setSelectedOption] = useState(null); // Currently selected option details
   const [entryPrice, setEntryPrice] = useState(0); // Track actual stock entry price for covered calls
   const [allOptionsData, setAllOptionsData] = useState(null); // Store complete API response for switching
+  const [showDetails, setShowDetails] = useState(false); // Toggle for advanced metrics
+  const [showSafetyBuffer, setShowSafetyBuffer] = useState(false); // Toggle for Safety Buffer tooltip on mobile
   const [error, setError] = useState(null);
 
   // Fetch Live Data from Yahoo Finance via RapidAPI
@@ -338,14 +340,24 @@ const App = () => {
             <div>
               <label className="text-xs text-slate-500 block mb-2">Ticker & Entry Price</label>
               <div className="flex gap-2">
-                <input 
-                  type="text"
-                  value={ticker}
-                  onChange={(e) => setTicker(e.target.value.toUpperCase())}
-                  onBlur={(e) => fetchMarketData(e.target.value.toUpperCase())}
-                  className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 flex-1 uppercase text-slate-100"
-                  placeholder="Symbol"
-                />
+                <div className="flex-1 relative">
+                  <input 
+                    type="text"
+                    value={ticker}
+                    onChange={(e) => setTicker(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => e.key === 'Enter' && fetchMarketData(ticker)}
+                    onBlur={(e) => fetchMarketData(e.target.value.toUpperCase())}
+                    className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 w-full uppercase text-slate-100"
+                    placeholder="Symbol"
+                  />
+                  <button
+                    onClick={() => fetchMarketData(ticker)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 focus:outline-none"
+                    aria-label="Search ticker"
+                  >
+                    🔍
+                  </button>
+                </div>
                 <div className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-400 whitespace-nowrap flex items-center">
                   ${entryPrice.toFixed(2)}
                 </div>
@@ -393,20 +405,25 @@ const App = () => {
               </select>
               <div className="flex items-center gap-2 mt-2">
                 <div className="text-2xl font-bold">{Math.abs(parseFloat(safetyBuffer)).toFixed(1)}%</div>
-                <div className="group relative">
-                  <span className="text-xs text-slate-500 cursor-help border-b border-dotted border-slate-500">
+                <div className="relative">
+                  <button
+                    onClick={() => setShowSafetyBuffer(!showSafetyBuffer)}
+                    className="text-xs text-slate-500 cursor-help border-b border-dotted border-slate-500 hover:text-slate-300 focus:outline-none"
+                  >
                     Safety Buffer
-                  </span>
-                  <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-10">
-                    <div className="text-xs text-slate-300 leading-relaxed">
-                      {parseFloat(safetyBuffer) < 0 
-                        ? `Strike is ${Math.abs(parseFloat(safetyBuffer)).toFixed(1)}% below current price ($${currentPrice.toFixed(2)}). Stock can drop this much before assignment.`
-                        : parseFloat(safetyBuffer) > 0
-                        ? `⚠️ Strike is ${Math.abs(parseFloat(safetyBuffer)).toFixed(1)}% above current price ($${currentPrice.toFixed(2)}). High risk - already in the money!`
-                        : `Strike equals current price ($${currentPrice.toFixed(2)}). At-the-money option.`
-                      }
+                  </button>
+                  {showSafetyBuffer && (
+                    <div className="absolute left-0 bottom-full mb-2 w-64 p-3 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-10">
+                      <div className="text-xs text-slate-300 leading-relaxed">
+                        {parseFloat(safetyBuffer) < 0 
+                          ? `Strike is ${Math.abs(parseFloat(safetyBuffer)).toFixed(1)}% below current price ($${currentPrice.toFixed(2)}). Stock can drop this much before assignment.`
+                          : parseFloat(safetyBuffer) > 0
+                          ? `⚠️ Strike is ${Math.abs(parseFloat(safetyBuffer)).toFixed(1)}% above current price ($${currentPrice.toFixed(2)}). High risk - already in the money!`
+                          : `Strike equals current price ($${currentPrice.toFixed(2)}). At-the-money option.`
+                        }
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -457,37 +474,29 @@ const App = () => {
                 <span className="text-green-400 font-bold">${Number(maxProfit).toLocaleString(undefined, {maximumFractionDigits:2})}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Annualized ROI</span>
-                <span className="text-blue-400 font-bold">{annualizedROI}%</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Return on Risk</span>
-                <span className="text-cyan-400 font-bold">{Number(returnOnRisk).toFixed(2)}%</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Max Profit</span>
-                <span className="text-green-400 font-bold">${Number(maxProfit).toLocaleString(undefined, {maximumFractionDigits:2})}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Contracts</span>
-                <span className="text-slate-300 font-bold">{contracts}</span>
+                <span className="text-slate-400">{mode === 'CC' ? 'No. of Contracts (Stock)' : 'Contracts'}</span>
+                <span className="text-slate-300 font-bold">{contracts} {mode === 'CC' ? `(${contracts * 100} shares @ $${entryPrice.toFixed(2)})` : ''}</span>
               </div>
               {selectedOption && (
                 <>
-                  <div className="flex justify-between text-xs pt-2 border-t border-slate-800">
-                    <span className="text-slate-500">Volume</span>
-                    <span className="text-slate-400">{selectedOption.volume || 0}</span>
+                  <div className="flex items-center justify-between mt-3">
+                    <button
+                      onClick={() => setShowDetails(s => !s)}
+                      className="text-xs text-slate-400 underline-offset-2 hover:underline"
+                    >
+                      {showDetails ? 'Hide details' : 'More details'}
+                    </button>
+                    <div className="text-xs text-slate-500">Vol / OI / IV</div>
                   </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">Open Interest</span>
-                    <span className="text-slate-400">{selectedOption.openInterest || 0}</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">Implied Vol</span>
-                    <span className="text-slate-400">{(selectedOption.impliedVolatility * 100).toFixed(1)}%</span>
-                  </div>
+
+                  {showDetails && (
+                    <div className="mt-2 space-y-1 text-xs text-slate-400">
+                      <div className="flex justify-between"><span>Volume</span><span>{selectedOption.volume || 0}</span></div>
+                      <div className="flex justify-between"><span>Open Interest</span><span>{selectedOption.openInterest || 0}</span></div>
+                      <div className="flex justify-between"><span>Implied Vol</span><span>{(selectedOption.impliedVolatility * 100).toFixed(1)}%</span></div>
+                    </div>
+                  )}
                 </>
-              )}
               )}
             </div>
           </div>
@@ -496,8 +505,8 @@ const App = () => {
             <div className="text-xs text-slate-400 mb-1">💡 Key Insight:</div>
             <div className="text-xs leading-relaxed">
               {mode === 'CSP' 
-                ? `If assigned, you'll buy ${ticker} at $${breakEven} (${discountPercent}% ${parseFloat(discountPercent) > 0 ? 'discount' : 'premium'} to current price). Your cost basis includes the ${premium.toFixed(2)} premium collected.`
-                : `If called away, you'll sell ${ticker} at $${breakEven} effective price. Max gain is capped at ${maxProfit}.`
+                ? `Break-even: $${breakEven.toFixed(2)} (${discountPercent}% ${parseFloat(discountPercent) > 0 ? 'discount' : 'premium'}). Premium: $${premium.toFixed(2)}`
+                : `Called away at $${breakEven.toFixed(2)}. Max gain: $${Number(maxProfit).toFixed(2)}`
               }
             </div>
           </div>

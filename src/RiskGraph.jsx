@@ -33,9 +33,10 @@ const RiskGraph = ({ mode, strike, premium, currentPrice, entryPrice }) => {
   }
 
   return (
-    <div className="h-64 w-full bg-slate-900/30 p-4 rounded-3xl border border-slate-800">
+    <div className="bg-slate-900/30 p-4 rounded-3xl border border-slate-800">
       <h4 className="text-xs font-bold text-slate-500 uppercase mb-4">P&L at Expiration</h4>
-      <ResponsiveContainer width="100%" height="100%">
+      <div className="w-full h-64">
+        <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
           <XAxis dataKey="price" stroke="#64748b" fontSize={10} tickFormatter={(val) => formatCurrency(val)} />
@@ -60,6 +61,7 @@ const RiskGraph = ({ mode, strike, premium, currentPrice, entryPrice }) => {
           <Line type="monotone" dataKey="pnl" stroke="#10b981" strokeWidth={3} dot={false} />
         </LineChart>
       </ResponsiveContainer>
+      </div>
     </div>
   );
 };
